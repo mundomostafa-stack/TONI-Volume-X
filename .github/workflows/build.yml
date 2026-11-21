@@ -1,0 +1,231 @@
+name: TONI Volume X APK Builder
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android
+        uses: android-actions/setup-android@v3
+
+      - name: Create Android Project
+        run: |
+          mkdir -p app/src/main/java/com/toni/volumex
+
+          cat > settings.gradle.kts <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "TONI-Volume-X"
+          include(":app")
+          EOF
+
+          cat > build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application") version "8.7.3" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+          }
+          EOF
+
+          cat > gradle.properties <<'EOF'
+          android.useAndroidX=true
+          org.gradle.jvmargs=-Xmx2048m
+          EOF
+
+          cat > app/build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+
+          android {
+              namespace = "com.toni.volumex"
+              compileSdk = 35
+
+              defaultConfig {
+                  applicationId = "com.toni.volumex"
+                  minSdk = 23
+                  targetSdk = 35
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+              <application
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar"
+                  android:label="TONI Volume X"
+                  android:allowBackup="true">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/java/com/toni/volumex/MainActivity.kt <<'EOF'
+          package com.toni.volumex
+
+          import android.app.Activity
+          import android.os.Bundle
+          import android.media.AudioManager
+          import android.widget.*
+          import android.graphics.Color
+
+          class MainActivity : Activity() {
+
+              private lateinit var audio: AudioManager
+              private val streams = intArrayOf(
+                  AudioManager.STREAM_RING,
+                  AudioManager.STREAM_MUSIC,
+                  AudioManager.STREAM_NOTIFICATION,
+                  AudioManager.STREAM_ALARM
+              )
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+
+                  audio = getSystemService(AUDIO_SERVICE) as AudioManager
+
+                  val layout = LinearLayout(this)
+                  layout.orientation = LinearLayout.VERTICAL
+                  layout.setPadding(25, 35, 25, 25)
+                  layout.setBackgroundColor(Color.rgb(8, 20, 45))
+
+                  val title = TextView(this)
+                  title.text = "TONI Volume X"
+                  title.textSize = 30f
+                  title.gravity = 17
+                  title.setTextColor(Color.WHITE)
+                  layout.addView(title)
+
+                  val subtitle = TextView(this)
+                  subtitle.text = "Smart Audio Control"
+                  subtitle.textSize = 18f
+                  subtitle.gravity = 17
+                  subtitle.setTextColor(Color.CYAN)
+                  layout.addView(subtitle)
+
+                  val info = TextView(this)
+                  info.text = "تحكم في صوت هاتفك"
+                  info.textSize = 20f
+                  info.gravity = 17
+                  info.setTextColor(Color.WHITE)
+                  layout.addView(info)
+
+                  val slider = SeekBar(this)
+                  slider.max = 80
+                  slider.progress = 65
+                  layout.addView(slider)
+
+                  val percent = TextView(this)
+                  percent.text = "65%"
+                  percent.gravity = 17
+                  percent.setTextColor(Color.WHITE)
+                  layout.addView(percent)
+
+                  slider.setOnSeekBarChangeListener(
+                      object : SeekBar.OnSeekBarChangeListener {
+                          override fun onProgressChanged(
+                              s: SeekBar?, p: Int, user: Boolean
+                          ) {
+                              percent.text = "$p%"
+                          }
+                          override fun onStartTrackingTouch(s: SeekBar?) {}
+                          override fun onStopTrackingTouch(s: SeekBar?) {}
+                      }
+                  )
+
+                  val boost = Button(this)
+                  boost.text = "MAX BOOST - تشغيل"
+                  layout.addView(boost)
+
+                  boost.setOnClickListener {
+                      streams.forEach { stream ->
+                          val max = audio.getStreamMaxVolume(stream)
+                          val value = max * slider.progress / 100
+                          audio.setStreamVolume(stream, value, 0)
+                      }
+                      Toast.makeText(
+                          this,
+                          "تم تطبيق إعدادات الصوت",
+                          Toast.LENGTH_SHORT
+                      ).show()
+                  }
+
+                  val restore = Button(this)
+                  restore.text = "إيقاف"
+                  layout.addView(restore)
+
+                  restore.setOnClickListener {
+                      streams.forEach { stream ->
+                          audio.setStreamVolume(
+                              stream,
+                              audio.getStreamMaxVolume(stream) / 2,
+                              0
+                          )
+                      }
+                      Toast.makeText(
+                          this,
+                          "تم ضبط الصوت على المستوى المتوسط",
+                          Toast.LENGTH_SHORT
+                      ).show()
+                  }
+
+                  val note = TextView(this)
+                  note.text = "الصوت يخضع لحدود الجهاز وإعدادات الأمان."
+                  note.setTextColor(Color.LTGRAY)
+                  note.gravity = 17
+                  layout.addView(note)
+
+                  setContentView(layout)
+              }
+          }
+          EOF
+
+      - name: Build APK
+        run: |
+          gradle --version || true
+          gradle assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TONI-Volume-X
+          path: app/build/outputs/apk/debug/app-debug.apk
